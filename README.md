@@ -47,41 +47,61 @@ Nothing in the system adds up... unless you know where to look.
 * **Thought Process:** The scenario pointed to a recently active device with suspicious executions from HR-related directories. We looked for file creation events initiated by PowerShell on or around the specified date to find the earliest evidence of tampering.
 * **KQL Query Used:**
 ```kusto
-     let hr_keywords = dynamic(["hr", "tools", "payroll", "evaluation", "payroll"]);
-     DeviceFileEvents
-     | where Timestamp >= datetime(2025-08-17T00:00:00Z)
-     | where ActionType in ("FileCreated", "FileModified")
-     | where FolderPath has_any (hr_keywords)
-     | where InitiatingProcessFileName =~ "powershell.exe"
-     | project Timestamp, DeviceName, InitiatingProcessCommandLine, FolderPath, FileName
-     | sort by Timestamp asc
+  let hr_keywords = dynamic(["hr", "tools", "payroll", "evaluation", "payroll"]);
+  DeviceFileEvents
+  | where Timestamp >= datetime(2025-08-17T00:00:00Z)
+  | where ActionType in ("FileCreated", "FileModified")
+  | where FolderPath has_any (hr_keywords)
+  | where InitiatingProcessFileName =~ "powershell.exe"
+  | project Timestamp, DeviceName, InitiatingProcessCommandLine, FolderPath, FileName
+  | sort by Timestamp asc
 ```
 * **Query Results:**
 <img width="1999" height="654" alt="image18" src="https://github.com/user-attachments/assets/abaff1f4-c7a0-4bd8-9daa-3af658fcf7ad" />
 
   
 * **Identified Answer:** **`n4thani3l-vm`**
-  
-    * **Why:** This machine had the most direct evidence of tampering with HR files and was where the first suspicious file creations were observed.
+    * **Why:** This machine had the most direct evidence of tampering with HR files and was where the first suspicious file creations were observed.
 
 ---
 
 ### Flag 1: Initial PowerShell Execution Detection
+<details>
+  <summary>Original task</summary> 
+  
+  * Objective:
+    Pinpoint the earliest suspicious PowerShell activity that marks the intruder's possible entry.
+
+  * What to Hunt:
+    Initial signs of PowerShell being used in a way that deviates from baseline usage.
+
+  * Thought:
+    Understanding where it all began helps chart every move that follows. Look for PowerShell actions that started the chain.
+
+  * Hint: 1. Who?
+
+  `Provide the creation time of the first suspicious process that occurred.`
+     
+---
+</details>
 
 * **Objective:** Pinpoint the earliest suspicious PowerShell activity that marks the intruder's possible entry.
 * **Thought Process:** Initial compromise often involves PowerShell. We looked for the earliest non-benign PowerShell command on the starting machine, differentiating it from earlier system noise.
 * **KQL Query Used:**
-    ```kusto
-    union DeviceFileEvents, DeviceProcessEvents
-    | where Timestamp >= datetime(2025-08-17T00:00:00Z)
-    | where DeviceName =~ "nathan-i3l-vm"
-    | where InitiatingProcessFileName =~ "powershell.exe" or FileName =~ "powershell.exe"
-    | project Timestamp, DeviceName, InitiatingProcessCommandLine, ProcessCommandLine, FolderPath, FileName
-    | sort by Timestamp asc
-    | limit 5
-    ```
-* **Identified Answer:** **`Aug 18, 2025 9:12:42 PM`**
-    * **Why:** This timestamp marks the first instance of a PowerShell process being used to create an HR-related file (`HR_PromotionList_...csv`), separating it from earlier benign system noise.
+```kusto
+  union DeviceFileEvents, DeviceProcessEvents
+  | where Timestamp >= datetime(2025-08-17T00:00:00Z)
+  | where DeviceName =~ "n4thani3l-vm"
+  | where InitiatingProcessAccountName != "system"
+  | where InitiatingProcessFileName =~ "powershell.exe" or FileName =~ "powershell.exe"
+  | project Timestamp, DeviceName, InitiatingProcessAccountName, ProcessCommandLine, FolderPath, FileName
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="1999" height="337" alt="image9" src="https://github.com/user-attachments/assets/390d6448-0dfd-40b2-84b2-af4913b4b82e" />
+
+* **Identified Answer:** **`2025-08-19T03:42:32.9389416Z`** 
+    * **Why:** This timestamp, corresponding to `Aug 18, 2025 11:42:32 PM`, marks the earliest execution of a suspicious `powershell.exe` command after the initial benign system noise. The command executed was `"whoami.exe" /all`, a classic reconnaissance tool used by attackers to enumerate their privileges and identify potential targets for privilege escalation. This confirms the start of the attacker's post-exploitation activity.
 
 ---
 
