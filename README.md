@@ -140,26 +140,45 @@ Nothing in the system adds up... unless you know where to look.
 
 
 * **Identified Answer:** **`9785001b0dcf755eddb8af294a373c0b87b2498660f724e76c4d53f9c217c7a3`**
-    * **Why:** This SHA256 hash corresponds to the `powershell.exe` command that enumerated local user accounts, a key step in post-exploitation reconnaissance.
+    * **Why:** This SHA256 hash corresponds to the `powershell.exe` command that enumerated local user accounts, a key step in post-exploitation reconnaissance.
 
 ---
 
 ### Flag 3: Privileged Group Assessment
+<details>
+  <summary>Original task</summary> 
+  
+  * Objective:
+    Identify elevated accounts on the target system.
+
+  * What to Hunt:
+    A method used to check for high-privilege users.
+
+  * Thought:
+    Knowledge of who has admin rights opens doors for impersonation and deeper lateral movement.
+
+  `What is the value of the command?`
+     
+---
+</details>
 
 * **Objective:** Identify elevated accounts and the value of the command used.
 * **Thought Process:** The attacker would check for privileged groups after enumerating local users. We looked for commands targeting the `Administrators` group.
 * **KQL Query Used:**
-    ```kusto
-    DeviceProcessEvents
-    | where DeviceName =~ "n4thani3l-vm"
-    | where ProcessCommandLine has_any ("net localgroup", "Get-LocalGroupMember")
-    | where ProcessCommandLine has_any ("administrators", "privileged")
-    | project Timestamp, ProcessCommandLine, InitiatingProcessAccountName, SHA256
-    | sort by Timestamp asc
-    | limit 5
-    ```
+```kusto
+  DeviceProcessEvents 
+  | where DeviceName =~ "n4thani3l-vm" 
+  | where ProcessCommandLine has_any ("net localgroup", "Get-LocalGroupMember") 
+  | where ProcessCommandLine has_any ("administrators", "privileged") 
+  | project Timestamp, ProcessCommandLine, InitiatingProcessAccountName, SHA256 
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="778" height="208" alt="image8" src="https://github.com/user-attachments/assets/4ffcf894-ba83-44d7-9658-bec30e43a9d7" />
+
+
 * **Identified Answer:** **`"powershell.exe" net localgroup Administrators`**
-    * **Why:** This command directly reveals the attacker's intent to identify elevated accounts for a potential privilege escalation.
+    * **Why:** This command directly reveals the attacker's intent to identify elevated accounts for a potential privilege escalation.
 
 ---
 
