@@ -106,20 +106,39 @@ Nothing in the system adds up... unless you know where to look.
 ---
 
 ### Flag 2: Local Account Assessment
+<details>
+  <summary>Original task</summary> 
+  
+  * Objective:
+    Map user accounts available on the system.
+
+  * What to Hunt:
+    PowerShell queries that enumerates local identities.
+
+  * Thought:
+    After knowing their own access level, intruders start scanning the local account landscape to plan privilege escalation or impersonation down the line.
+
+  `Identify the associated SHA256 value of this particular instance.`
+     
+---
+</details>
 
 * **Objective:** Map user accounts available on the system and identify the associated SHA256 value of the enumeration command.
 * **Thought Process:** Reconnaissance typically follows initial access. We looked for PowerShell commands like `Get-LocalUser` or `net user` used to enumerate local accounts.
 * **KQL Query Used:**
-    ```kusto
-    DeviceProcessEvents
-    | where Timestamp > datetime(2025-08-18T23:42:32Z)
-    | where DeviceName =~ "n4thani3l-vm"
-    | where InitiatingProcessFileName =~ "powershell.exe"
-    | where ProcessCommandLine has_any ("Get-LocalUser", "Get-LocalGroup", "net user", "net localgroup")
-    | project Timestamp, ProcessCommandLine, InitiatingProcessAccountName, SHA256
-    | sort by Timestamp asc
-    | limit 10
-    ```
+```kusto
+  DeviceProcessEvents
+  | where Timestamp > datetime(2025-08-18T23:42:32Z)
+  | where DeviceName =~ "n4thani3l-vm"
+  | where InitiatingProcessFileName =~ "powershell.exe"
+  | where ProcessCommandLine has_any ("Get-LocalUser", "Get-LocalGroup", "net user", "net localgroup")
+  | project Timestamp, ProcessCommandLine, InitiatingProcessAccountName, SHA256
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="1999" height="193" alt="image11" src="https://github.com/user-attachments/assets/5e0cd155-cd36-468e-bbae-f04672309536" />
+
+
 * **Identified Answer:** **`9785001b0dcf755eddb8af294a373c0b87b2498660f724e76c4d53f9c217c7a3`**
     * **Why:** This SHA256 hash corresponds to the `powershell.exe` command that enumerated local user accounts, a key step in post-exploitation reconnaissance.
 
