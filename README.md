@@ -456,7 +456,9 @@ Nothing in the system adds up... unless you know where to look.
 * **Objective:** Uncover evidence of internal data leaving the environment.
 * **Thought Process:** We needed to find the last unusual outbound network connection. 
 * **KQL Query Used:**
-    Query from the Flag 9.
+* 
+    ```Query from the Flag 9.```
+  
 * **Query Results:**
 <img width="1079" height="318" alt="image5" src="https://github.com/user-attachments/assets/205c2146-e73e-4985-889d-4c1f766d6149" />
 
@@ -466,100 +468,222 @@ Nothing in the system adds up... unless you know where to look.
 ---
 
 ### Flag 11: Persistence via Local Scripting
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Verify if unauthorized persistence was established via legacy tooling.
+
+  * What to Hunt:
+    Use of startup configurations tied to non-standard executables.
+
+  * Thought:
+    A quiet script in the right location can make a backdoor look like a business tool.
+
+  * Side Note: 4/6
+    (DeviceProcessEvents | where FileName =~ "Sysmon64.exe" and ProcessCommandLine has "-c")
+    
+  `Provide the file name tied to the registry value.`
+     
+---
+</details>
 
 * **Objective:** Verify if unauthorized persistence was established via legacy tooling.
 * **Thought Process:** We looked for registry modifications in common persistence keys like `CurrentVersion\Run`.
 * **KQL Query Used:**
-    ```kusto
-    DeviceRegistryEvents
-    | where DeviceName =~ "n4thani3l-vm"
-    | where InitiatingProcessAccountName =~ "n4th4n13l"
-    | where ActionType == "RegistryValueSet"
-    | where RegistryKey contains "CurrentVersion\\Run"
-    | project Timestamp, InitiatingProcessCommandLine, RegistryKey, RegistryValueName, RegistryValueData, InitiatingProcessFileName
-    | sort by Timestamp asc
-    | limit 5
-    ```
+```kusto
+  // Hunt for persistence established via startup registry keys
+  DeviceRegistryEvents
+  | where DeviceName =~ "n4thani3l-vm"
+  | where InitiatingProcessAccountName =~ "n4th4n13l"
+  | where ActionType == "RegistryValueSet"
+  | where RegistryKey contains "CurrentVersion\\Run"
+  | project Timestamp, InitiatingProcessCommandLine, RegistryKey, RegistryValueName, RegistryValueData, InitiatingProcessFileName
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="1476" height="285" alt="image17" src="https://github.com/user-attachments/assets/2719d3fd-efdf-487f-b34c-ff4573d52b8e" />
+
 * **Identified Answer:** **`OnboardTracker.ps1`**
-    * **Why:** This script was registered in a startup key, which is a definitive method of achieving persistence.
+    * **Why:** The log entry at `Aug 19, 2025 12:46:07 AM` shows a PowerShell command modifying a registry key in the `HKEY_CURRENT_USER\...\CurrentVersion\Run` path. The
+`RegistryValueData` field clearly shows that the new value points to the file `C:\HRTools\LegacyAutomation\OnboardTracker.ps1`, which is the file name associated with this malicious persistence.
+
 
 ---
 
 ### Flag 12: Targeted File Reuse / Access
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Surface the document that stood out in the attack sequence.
+
+  * What to Hunt:
+    Repeated or anomalous access to personnel files.
+
+  * Thought:
+    The file that draws the most interest often holds the motive.
+
+  * Format:
+    Abcd Efgh
+    
+  `What is the name of the personnel file that was repeatedly accessed?`
+     
+---
+</details>
 
 * **Objective:** Surface the document that stood out in the attack sequence.
 * **Thought Process:** We looked for files that were repeatedly accessed by a text editor to understand the attacker's motive.
 * **KQL Query Used:**
-    ```kusto
+```kusto
     DeviceProcessEvents
     | where DeviceName =~ "n4thani3l-vm"
     | where FileName contains "notepad"
     | summarize count() by ProcessCommandLine
     | sort by count_ desc
-    ```
+```
+* **Query Results:**
+<img width="578" height="345" alt="image1" src="https://github.com/user-attachments/assets/77601bf4-a1bd-4357-941c-7ba497e39222" />
+
 * **Identified Answer:** **`Carlos Tanaka`**
-    * **Why:** The logs showed that the file `Carlos_Tanaka_Evaluation.txt` was opened 8 times, which was the highest count in the results. This repeated access to a specific personnel file, as opposed to the other files in the logs, indicates that it held the motive for the attack.
+    * **Why:** The logs showed that the file `Carlos_Tanaka_Evaluation.txt` was opened 8 times, which was the highest count in the results. This repeated access to a specific personnel file, as opposed to the other files in the logs, indicates that it held the motive for the attack.
 
 ---
 
 ### Flag 13: Candidate List Manipulation
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Trace tampering with promotion-related data.
+
+  * What to Hunt:
+    Unexpected modifications to structured HR records.
+
+  * Thought:
+    Whether tampering or staging — file changes precede extraction.
+
+  * Hint:
+    1. Utilize previous findings
+    2. File is duplicated in other folder(s)
+
+  * Side Note: 5/6
+    (DeviceRegistryEvents | where RegistryKey has @"SOFTWARE\CorpHRChaos")
+    
+  `Identify the first instance where the file in question is modified and drop the corresponding SHA1 value of it.`
+     
+---
+</details>
 
 * **Objective:** Trace tampering with promotion-related data.
 * **Thought Process:** The attacker tampered with a file before exfiltrating it. We looked for the first modification of a promotion-related file and its SHA1 hash.
 * **KQL Query Used:**
-    ```kusto
-    let promotion_keywords = dynamic(["PromotionCandidates.csv", "PromotionList.csv"]);
-    DeviceFileEvents
-    | where DeviceName =~ "n4thani3l-vm"
-    | where InitiatingProcessAccountName =~ "n4th4n13l"
-    | where ActionType == "FileModified"
-    | where FileName has_any (promotion_keywords)
-    | project Timestamp, ActionType, FileName, FolderPath, InitiatingProcessCommandLine, SHA1
-    | sort by Timestamp asc
-    | limit 5
-    ```
+```kusto
+  DeviceFileEvents
+  | where DeviceName =~ "n4thani3l-vm"
+  | where InitiatingProcessAccountName =~ "n4th4n13l"
+  | where ActionType == "FileModified"
+  | where FileName contains "promotion"
+  | project Timestamp, ActionType, FileName, FolderPath, InitiatingProcessCommandLine, SHA1
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="954" height="255" alt="image12" src="https://github.com/user-attachments/assets/3783c58a-5923-44b5-8e39-0aade9dd647b" />
+
+
 * **Identified Answer:** **`df5e35a8dcecdf1430af7001c58f3e9e9faafa05`**
-    * **Why:** This SHA1 hash corresponds to the `FileModified` event on `PromotionCandidates.csv`, which is a key piece of evidence of data tampering.
+    * **Why:** This SHA1 hash corresponds to the `FileModified` event on `PromotionCandidates.csv`, which is a key piece of evidence of data tampering.
 
 ---
 
 ### Flag 14: Audit Trail Disruption
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Detect attempts to impair system forensics.
+
+  * What to Hunt:
+    Operations aimed at removing historical system activity.
+
+  * Thought:
+    The first thing to go when a crime’s committed? The cameras.
+
+  * Hint:
+    1. "ab"
+
+  `Identify when the first attempt at clearing the trail was done.`
+     
+---
+</details>
 
 * **Objective:** Detect attempts to impair system forensics.
-* **Thought Process:** The attacker would clear logs to cover their tracks. We looked for `wevtutil.exe` commands.
+* **Thought Process:** The attacker would clear logs to cover their tracks. We looked for `wevtutil.exe` commands. `wevtutil.exe` is a legitimate Windows command-line utility used to manage event logs. Its primary function is to perform administrative tasks on logs, such as exporting, archiving, or clearing them. It is often abused by attackers to erase their tracks and impair system forensics.
+
 * **KQL Query Used:**
-    ```kusto
-    DeviceProcessEvents
-    | where DeviceName =~ "n4thani3l-vm"
-    | where InitiatingProcessAccountName =~ "n4th4n13l"
-    | where Timestamp > datetime('2025-08-19T00:00:00Z')
-    | where ProcessCommandLine has_any ("wevtutil.exe", "clear-log", "clear-eventlog")
-    | project Timestamp, ProcessCommandLine, InitiatingProcessCommandLine
-    | sort by Timestamp asc
-    | limit 5
-    ```
-* **Identified Answer:** **`Aug 19, 2025 12:55:48 AM`**
-    * **Why:** This is the earliest timestamp for an anti-forensics command, where the attacker is actively clearing system event logs.
+```kusto
+  // Hunt for anti-forensics activity to clear logs
+  DeviceProcessEvents
+  | where DeviceName =~ "n4thani3l-vm"
+  | where InitiatingProcessAccountName =~ "n4th4n13l"
+  | where ProcessCommandLine has_any ("wevtutil.exe", "clear-log", "clear-eventlog")
+  | project Timestamp, ProcessCommandLine, InitiatingProcessCommandLine
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="961" height="424" alt="image4" src="https://github.com/user-attachments/assets/b9ce401a-906e-4d59-b648-11db6dd571c7" />
+
+* **Identified Answer:** **`2025-08-19T04:55:48.9660467Z`**
+    * **Why:** Based on the results, the first attempt at clearing the audit trail was done at `Aug 19, 2025 12:55:48 AM`.
+The logs show that at this time, the command `wevtutil.exe cl Security` was executed, which is a direct command to clear the Security event log. This action aligns perfectly with the flag's objective of impairing system forensics.
 
 ---
 
 ### Flag 15: Final Cleanup and Exit Prep
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Capture the combination of anti-forensics actions signaling attacker exit.
+
+  * What to Hunt:
+    Artifact deletions, security tool misconfigurations, and trace removals.
+
+  * Thought:
+    Every digital intruder knows — clean up before you leave or you’re already caught.
+
+  * Side Note: 6/6
+    | sort by Timestamp desc
+
+  `Identify when the last associated attempt occurred.`
+     
+---
+</details>
 
 * **Objective:** Capture the combination of anti-forensics actions signaling attacker exit.
 * **What to Hunt:** Artifact deletions, security tool misconfigurations, and trace removals.
 * **Thought Process:** We looked for the last anti-forensics action. This could be log clearing, history file deletion, or artifact deletion.
 * **KQL Query Used:**
-    ```kusto
-    union DeviceProcessEvents, DeviceFileEvents
-    | where DeviceName =~ "n4thani3l-vm"
-    | where InitiatingProcessAccountName =~ "n4th4n13l"
-    | where (ProcessCommandLine has "wevtutil.exe cl") or (FileName =~ "ConsoleHost_history.txt" and ActionType == "FileDeleted") or (ProcessCommandLine has "Remove-Item")
-    | project Timestamp, ProcessCommandLine, FileName, ActionType, InitiatingProcessCommandLine
-    | sort by Timestamp desc
-    | limit 1
-    ```
-* **Identified Answer:** **`Aug 19, 2025 1:08:11 AM`**
-    * **Why:** This is the latest timestamp of a confirmed anti-forensics action, signaling the final cleanup before the attacker's exit.
+  This query looks for three key anti-forensics actions:
+    * wevtutil.exe cl: Hunting for commands that clear system event logs to erase evidence.
+    * ConsoleHost_history.txt: Looking for the deletion of the PowerShell history file, which contains a record of all executed commands.
+    * Remove-Item: Searching for commands that delete files or registry keys, a general cleanup action.
+
+```kusto
+  // Hunt for the last anti-forensics action before exit
+  union DeviceProcessEvents, DeviceFileEvents
+  | where DeviceName =~ "n4thani3l-vm"
+  | where InitiatingProcessAccountName =~ "n4th4n13l"
+  | where (ProcessCommandLine has "wevtutil.exe cl") or (FileName =~ "ConsoleHost_history.txt" and ActionType == "FileDeleted") or (ProcessCommandLine has "Remove-Item")
+  | project Timestamp, ProcessCommandLine, FileName, ActionType, InitiatingProcessCommandLine
+  | sort by Timestamp desc
+```
+* **Query Results:**
+<img width="946" height="344" alt="image15" src="https://github.com/user-attachments/assets/c14e60a7-9c42-413d-9817-1d112ec8b772" />
+
+* **Identified Answer:** **`2025-08-19T05:08:11.8528871Z`**
+    * **Why:** Based on the results, the last associated attempt occurred at `Aug 19, 2025 1:08:11 AM`.
+The logs show that at this time, the `ConsoleHost_history.txt` file was deleted. This is the latest event in the logs that is tied to a cleanup action, and it signals the end of the attacker's activities on the system.
 
 ---
 
