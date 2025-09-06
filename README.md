@@ -183,143 +183,285 @@ Nothing in the system adds up... unless you know where to look.
 ---
 
 ### Flag 4: Active Session Discovery
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Reveal which sessions are currently active for potential masking.
+
+  * What to Hunt:
+    Might be session-enumeration commands.
+
+  * Thought:
+    By riding along existing sessions, attackers can blend in and avoid spawning suspicious user contexts.
+
+  `Provide the value of the program tied to this activity.`
+     
+---
+</details>
 
 * **Objective:** Reveal which sessions are currently active for potential masking.
 * **Thought Process:** An attacker would enumerate sessions to blend in. We looked for commands like `qwinsta` that are commonly used for this purpose.
 * **KQL Query Used:**
-    ```kusto
-    DeviceProcessEvents
-    | where Timestamp > datetime(2025-08-18T23:42:54Z)
-    | where DeviceName =~ "n4thani3l-vm"
-    | where ProcessCommandLine has_any ("query user", "qwinsta", "net session")
-    | project Timestamp, ProcessCommandLine, InitiatingProcessAccountName, SHA256
-    | sort by Timestamp asc
-    | limit 5
-    ```
+```kusto
+  DeviceProcessEvents
+  | where Timestamp > datetime(2025-08-18T23:42:54Z)
+  | where DeviceName =~ "n4thani3l-vm"
+  | where ProcessCommandLine has_any ("query user", "qwinsta", "net session")
+  | project Timestamp, ProcessCommandLine, InitiatingProcessAccountName, SHA256
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="757" height="153" alt="image6" src="https://github.com/user-attachments/assets/cb1609c2-5f77-42c0-8398-7f00ee2a853b" />
+
+
 * **Identified Answer:** **`"powershell.exe" qwinsta`**
-    * **Why:** This command is used to query active sessions, a key reconnaissance step for an attacker looking to blend into an existing user context.
+    * **Why:** This command is used to query active sessions, a key reconnaissance step for an attacker looking to blend into an existing user context.
 
 ---
 
 ### Flag 5: Defender Configuration Recon
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Expose tampering or inspection of AV defenses, disguised under HR activity.
+
+  * What to Hunt:
+    Can be PowerShell related activity.
+
+  * Thought:
+    Disabling protection under the guise of internal tooling is a hallmark of insider abuse.
+
+  * Side Note: 1/6
+    union
+  
+  `What was the command value used to execute?`
+     
+---
+</details>
 
 * **Objective:** Expose tampering or inspection of AV defenses, disguised under HR activity.
 * **Thought Process:** The attacker would try to disable Defender. We looked for a PowerShell command with keywords like `Set-MpPreference` that also included HR-related keywords or was part of a larger script disguised as a business tool.
 * **KQL Query Used:**
-    ```kusto
-    let defender_keywords = dynamic(["MpPreference", "Defender", "Antivirus", "RealtimeProtection", "disable"]);
-    let hr_keywords = dynamic(["HR", "HumanResources", "Payroll", "Employee", "Report", "documents"]);
-    union DeviceProcessEvents, DeviceFileEvents, DeviceRegistryEvents
-    | where Timestamp > datetime(2025-08-18T23:42:54Z)
-    | where DeviceName =~ "n4thani3l-vm"
-    | where InitiatingProcessAccountName =~ "n4th4n13l"
-    | where ProcessCommandLine has_any (defender_keywords) or FolderPath has_any (defender_keywords) or FileName has_any (defender_keywords) or RegistryKey has_any (defender_keywords)
-    | where ProcessCommandLine has_any (hr_keywords) or FolderPath has_any (hr_keywords) or FileName has_any (hr_keywords) or RegistryKey has_any (hr_keywords)
-    | project Timestamp, ActionType, ProcessCommandLine, FolderPath, FileName, InitiatingProcessAccountName, RegistryKey, RegistryValueData
-    | sort by Timestamp asc
-    | limit 10
-    ```
+```kusto
+  let defender_keywords = dynamic(["MpPreference", "Defender", "Antivirus", "RealtimeProtection", "disable"]);
+  DeviceProcessEvents
+  | where Timestamp > datetime(2025-08-18T23:42:54Z)
+  | where DeviceName =~ "n4thani3l-vm"
+  | where InitiatingProcessAccountName =~ "n4th4n13l"
+  | where ProcessCommandLine has_any (defender_keywords) and ProcessCommandLine contains "powershell"
+  | project Timestamp, ActionType, ProcessCommandLine, FolderPath, FileName, InitiatingProcessAccountName
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="979" height="246" alt="image3" src="https://github.com/user-attachments/assets/41511907-676f-4b67-842c-d2f833d3c0e1" />
+
 * **Identified Answer:** **`"powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command Set-MpPreference -DisableRealtimeMonitoring $true; Start-Sleep -Seconds 1; Set-Content -Path "C:\Users\Public\PromotionPayload.ps1" -Value "Write-Host 'Payload Executed'"`**
-    * **Why:** This full command line provides a complete picture of the attack's objective, from disabling the antivirus to dropping a malicious payload.
+    * **Why:** This full command line provides a complete picture of the attack's objective, from disabling the antivirus to dropping a malicious payload.
 
 ---
 
 ### Flag 6: Defender Policy Modification
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Validate if core system protection settings were modified.
+
+  * What to Hunt:
+    Policy or configuration changes that affect baseline defensive posture.
+
+  * Thought:
+    Turning down the shield is always a red flag.
+  
+  `Provide the name of the registry value.`
+     
+---
+</details>
 
 * **Objective:** Validate if core system protection settings were modified.
 * **Thought Process:** We looked for registry modifications to persistent Defender settings.
 * **KQL Query Used:**
-    ```kusto
-    DeviceRegistryEvents
-    | where Timestamp > datetime(2025-08-19T00:24:03Z)
-    | where DeviceName =~ "n4thani3l-vm"
-    | where InitiatingProcessAccountName =~ "n4th4n13l"
-    | where RegistryKey contains "Windows Defender"
-    | where InitiatingProcessCommandLine has_any("powershell", "reg.exe")
-    | project Timestamp, ActionType, InitiatingProcessCommandLine, RegistryKey, RegistryValueName, RegistryValueData, InitiatingProcessFileName
-    | sort by Timestamp asc
-    | limit 5
-    ```
+```kusto
+  // Hunt for registry modifications affecting Windows Defender policy
+  DeviceRegistryEvents
+  | where Timestamp > datetime(2025-08-19T00:24:03Z)
+  | where DeviceName =~ "n4thani3l-vm"
+  | where InitiatingProcessAccountName =~ "n4th4n13l"
+  | where RegistryKey contains "Windows Defender"
+  | where InitiatingProcessCommandLine has_any("powershell", "reg.exe")
+  | project Timestamp, ActionType, InitiatingProcessCommandLine, RegistryKey, RegistryValueName, RegistryValueData
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="1309" height="291" alt="image7" src="https://github.com/user-attachments/assets/f1ebe07b-fede-4cea-bfb3-6e4f1dbf05c6" />
+
 * **Identified Answer:** **`DisableAntiSpyware`**
-    * **Why:** This is a definitive sign of the attacker modifying core protection settings to maintain their foothold.
+    * **Why:** The log shows a `RegistryValueSet` action at `Aug 18, 2025 11:53:15 PM` where the `DisableAntiSpyware` value was modified to `1`. This directly confirms that the core system protection settings were tampered with to disable Windows Defender's anti-spyware capabilities, which is a classic move to avoid detection.
 
 ---
 
 ### Flag 7: Access to Credential-Rich Memory Space
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Identify if the attacker dumped memory content from a sensitive process.
+
+  * What to Hunt:
+    Uncommon use of system utilities interacting with protected memory.
+
+  * Thought:
+    The path to credentials often runs through memory — if you can reach it, you own it.
+
+  * Side Note: 2/6
+    (DeviceFileEvents | where FileName =~ "ConsoleHost_history.txt" and ActionType == "FileDeleted")
+  
+  `What was the HR related file name associated with this tactic?`
+     
+---
+</details>
 
 * **Objective:** Identify if the attacker dumped memory content from a sensitive process.
 * **Thought Process:** The attacker used a system utility in an uncommon way to dump memory. We looked for the `rundll32.exe` command with a `MiniDump` argument.
 * **KQL Query Used:**
-    ```kusto
-    DeviceProcessEvents
-    | where DeviceName =~ "n4thani3l-vm"
-    | where FileName contains "notepad"
-    | summarize count() by ProcessCommandLine
-    | sort by count_ desc
-    ```
+  Used the provided in the hint KQL to fix the `Timestamp` of the Deletion of the `ConsoleHost_history.txt` file:
+```kusto
+  DeviceFileEvents | where FileName =~ "ConsoleHost_history.txt" and ActionType == "FileDeleted"
+```
+* **Query Results:**
+<img width="875" height="161" alt="image16" src="https://github.com/user-attachments/assets/fa57a1e2-ac5d-4c54-8be3-46ee2b79e3b9" />
+  
+  File was deleted last time on `2025-08-19T05:08:11.8528871Z` so I observed the `DeviceProcessEvent` table for the powershell commands contained “HR” before the deletion with the following KQL:
+```kusto
+  DeviceProcessEvents
+  | where DeviceName =~ "n4thani3l-vm"
+  | where InitiatingProcessFileName contains "powershell"
+  | where ProcessCommandLine contains "HR"
+  | project Timestamp, FileName, InitiatingProcessFileName, ProcessCommandLine
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="1210" height="330" alt="image10" src="https://github.com/user-attachments/assets/6c53fec3-87be-4f3c-b1af-cbd61426d3cf" />
+
 * **Identified Answer:** **`HRConfig.json`**
-    * **Why:** The logs showed the use of `rundll32.exe` with the `MiniDump` argument, writing the output to `HRConfig.json`. This is the HR-related file associated with the memory dump.
+    * **Why:** The logs showed the use of `rundll32.exe` with the `MiniDump` argument, writing the output to `HRConfig.json`. This is the HR-related file associated with the memory dump. The process ID `680` is a strong indicator that the attacker was dumping the memory of the `lsass.exe` process, which is the primary target for credential theft in Windows.
 
 ---
 
 ### Flag 8: File Inspection of Dumped Artifacts
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Detect whether memory dump contents were reviewed post-collection.
+
+  * What to Hunt:
+    Signs of local tools accessing sensitive or unusually named files.
+
+  * Thought:
+    Dumping isn’t the end — verification is essential.
+
+  * Hint:
+    Utilize previous findings
+  
+  `Provide the value of the associated command.`
+     
+---
+</details>
 
 * **Objective:** Detect whether memory dump contents were reviewed post-collection.
 * **Thought Process:** The attacker would have opened the dumped file (`HRConfig.json`) to inspect its contents. We looked for a tool like `notepad.exe` opening this specific file.
 * **KQL Query Used:**
-    ```kusto
-    DeviceProcessEvents
-    | where Timestamp > datetime('2025-08-18T23:59:54Z')
-    | where DeviceName =~ "n4thani3l-vm"
-    | where InitiatingProcessAccountName =~ "n4th4n13l"
-    | where ProcessCommandLine contains "HRConfig.json"
-    | where InitiatingProcessFileName has_any ("notepad.exe", "code.exe", "powershell.exe")
-    | project Timestamp, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessAccountName, SHA256
-    | sort by Timestamp asc
-    | limit 5
-    ```
+```kusto
+  // Hunt for local tools accessing the dumped HRConfig.json file
+  DeviceProcessEvents
+  | where DeviceName =~ "n4thani3l-vm"
+  | where InitiatingProcessAccountName =~ "n4th4n13l"
+  | where ProcessCommandLine contains "HRConfig.json"
+  | where InitiatingProcessFileName has_any ("notepad.exe", "code.exe", "powershell.exe")
+  | project Timestamp, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessAccountName, SHA256
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="1053" height="314" alt="image2" src="https://github.com/user-attachments/assets/734b7471-211a-42d4-aefb-a2f66ff220cc" />
+
 * **Identified Answer:** **`"notepad.exe" C:\HRTools\HRConfig.json`**
-    * **Why:** This command directly shows the attacker verifying the contents of the dumped credential file.
+    * **Why:** The logs show that at `Aug 18, 2025 11:59:55 PM`, a PowerShell process was used to open the `HRConfig.json` file with `notepad.exe`. This action directly indicates that the attacker was reviewing the contents of the file that was created during the memory dump, which confirms the "verification is essential" thought from the flag's objective.
 
 ---
 
 ### Flag 9: Outbound Communication Test
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Catch network activity establishing contact outside the environment.
+
+  * What to Hunt:
+    Lightweight outbound requests to uncommon destinations.
+
+  * Thought:
+    Before exfiltration, there’s always a ping — even if it’s disguised as routine.
+
+  * Side Note: 3/6
+    (DeviceFileEvents | where FileName =~ "EmptySysmonConfig.xml")
+    
+  `What was the TLD of the unusual outbound connection?`
+     
+---
+</details>
+
 
 * **Objective:** Catch network activity establishing contact outside the environment.
 * **Thought Process:** An attacker would perform a network test before exfiltrating data. We looked for outbound connections to uncommon destinations.
 * **KQL Query Used:**
-    ```kusto
-    DeviceNetworkEvents
-    | where DeviceName =~ "n4thani3l-vm"
-    | where InitiatingProcessAccountName =~ "n4th4n13l"
-    | where RemoteUrl !endswith "microsoft.com" and RemoteUrl !contains "windows.update"
-    | where InitiatingProcessFileName contains "powershell"
-    | project Timestamp, RemoteUrl, RemoteIP, RemotePort, InitiatingProcessCommandLine, InitiatingProcessAccountName
-    | sort by Timestamp asc
-    ```
+```kusto
+  // Hunt for unusual outbound network connections
+  DeviceNetworkEvents
+  | where DeviceName =~ "n4thani3l-vm"
+  | where RemoteUrl !endswith "microsoft.com" and RemoteUrl !contains "windows.update" // Filter for uncommon destinations
+  | where InitiatingProcessFileName contains "powershell"
+  | where InitiatingProcessAccountName == "n4th4n13l"
+  | project Timestamp, RemoteUrl, RemoteIP, RemotePort, InitiatingProcessCommandLine, InitiatingProcessAccountName
+  | sort by Timestamp asc
+```
+* **Query Results:**
+<img width="1079" height="318" alt="image5" src="https://github.com/user-attachments/assets/205c2146-e73e-4985-889d-4c1f766d6149" />
+
 * **Identified Answer:** **`.net`**
-    * **Why:** The TLD `.net` is a part of the unusual outbound URL, indicating a test connection to an external domain.
+    * **Why:** The TLD `.net` is a part of the unusual outbound URL, indicating a test connection to an external domain.
 
 ---
 
 ### Flag 10: Covert Data Transfer
+<details>
+  <summary>Original task (click to reveal)</summary> 
+  
+  * Objective:
+    Uncover evidence of internal data leaving the environment.
+
+  * What to Hunt:
+    Activity that hints at transformation or movement of local HR data.
+
+  * Thought:
+    Staging the data is quiet. Sending it out makes noise — if you know where to listen.
+    
+  `Identify the ping of the last unusual outbound connection attempt.`
+     
+---
+</details>
 
 * **Objective:** Uncover evidence of internal data leaving the environment.
-* **Thought Process:** We needed to find the last unusual outbound network connection. We sorted network events by timestamp in descending order.
+* **Thought Process:** We needed to find the last unusual outbound network connection. 
 * **KQL Query Used:**
-    ```kusto
-    DeviceNetworkEvents
-    | where Timestamp > datetime('2025-08-19T00:37:45Z')
-    | where DeviceName =~ "n4thani3l-vm"
-    | where ActionType == "ConnectionSucceeded"
-    | where InitiatingProcessAccountName =~ "n4th4n13l"
-    | where RemoteUrl !endswith "microsoft.com" and RemoteUrl !contains "windows.update"
-    | project Timestamp, RemoteUrl, RemoteIP, InitiatingProcessCommandLine
-    | sort by Timestamp desc
-    | limit 5
-    ```
+    Query from the Flag 9.
+* **Query Results:**
+<img width="1079" height="318" alt="image5" src="https://github.com/user-attachments/assets/205c2146-e73e-4985-889d-4c1f766d6149" />
+
 * **Identified Answer:** **`3.234.58.20`**
-    * **Why:** This IP address is associated with the last unusual outbound connection, which is the final step before data exfiltration.
+    * **Why:** This IP address is associated with the last unusual outbound connection, which is the final step before data exfiltration.
 
 ---
 
