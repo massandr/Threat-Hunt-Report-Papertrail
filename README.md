@@ -67,7 +67,7 @@ Nothing in the system adds up... unless you know where to look.
 
 ### Flag 1: Initial PowerShell Execution Detection
 <details>
-  <summary>Original task</summary> 
+  <summary>Original task (click to reveal)</summary> 
   
   * Objective:
     Pinpoint the earliest suspicious PowerShell activity that marks the intruder's possible entry.
@@ -107,7 +107,7 @@ Nothing in the system adds up... unless you know where to look.
 
 ### Flag 2: Local Account Assessment
 <details>
-  <summary>Original task</summary> 
+  <summary>Original task (click to reveal)</summary> 
   
   * Objective:
     Map user accounts available on the system.
@@ -146,7 +146,7 @@ Nothing in the system adds up... unless you know where to look.
 
 ### Flag 3: Privileged Group Assessment
 <details>
-  <summary>Original task</summary> 
+  <summary>Original task (click to reveal)</summary> 
   
   * Objective:
     Identify elevated accounts on the target system.
